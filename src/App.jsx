@@ -1,11 +1,11 @@
 import React from "react";
-import Simulation from "./Simulation.jsx";
+import MatrixDisplayDynamic from "./MatrixDisplayDynamic";
 
 function App() {
   return (
     <div>
-      <h1>Interactive Simulation</h1>
-      <Simulation />
+      <h1>Grayscale Matrix Visualization</h1>
+      <MatrixDisplayDynamic />
     </div>
   );
 }
