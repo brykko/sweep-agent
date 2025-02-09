@@ -24,7 +24,7 @@ const MatrixDisplayDynamic = () => {
     const interval = setInterval(() => {
       setMatrix(generateMatrix());
     }, UPDATE_INTERVAL);
-    return () => clearInterval(interval);
+    return () => clearInterval(interval); // cleanup
   }, []);
 
   const setup = (p5, canvasParentRef) => {
