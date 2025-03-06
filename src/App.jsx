@@ -5,7 +5,6 @@ import AgentSimulation from "./AgentSimulation";
 function App() {
   return (
     <div>
-      <h1>Grayscale Matrix Visualization</h1>
       <AgentSimulation />
     </div>
   );
