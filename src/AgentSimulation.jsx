@@ -109,6 +109,40 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
   return { newTrace, newAgentPos };
 };
 
+// New helper function to draw the robot
+const drawRobot = (p5, x, y, size, phase, orientation) => {
+  p5.push();
+  // Translate to (x, y) so that (0,0) becomes the center of the robot
+  p5.translate(x, y);
+  // Rotate the coordinate system by the specified orientation
+  p5.rotate(-orientation);
+
+  // Set up stroke for the legs
+  p5.stroke(255, 255, 255); // White color for legs
+  p5.strokeWeight(10);
+
+  // Calculate leg parameters
+  const strideLength = 20;
+  const legOffset = size * 0.3;
+
+  // Draw left leg: oscillate vertically using sine function
+  const leftOsc = p5.sin(phase) * strideLength;
+  // Legs originate from (–legOffset, size/2)
+  p5.line(-legOffset, 0, -legOffset, leftOsc);
+
+  // Draw right leg: opposite phase
+  const rightOsc = p5.sin(phase + Math.PI) * strideLength;
+  p5.line(legOffset, 0, legOffset, rightOsc);
+
+  // Draw the robot's body as a circle centered at (0,0)
+  p5.fill(200);
+  p5.stroke(0);
+  p5.strokeWeight(0);
+  p5.ellipse(0, 0, size, size);
+
+  p5.pop();
+};
+
 // =============================================================================
 // Pre-computed constant grids (they never change)
 // =============================================================================
@@ -207,15 +241,22 @@ const AgentSimulation = () => {
     const dx = current.x - prev.x;
     const dy = current.y - prev.y;
     const distance = Math.hypot(dx, dy);
-    // Define a jump threshold (e.g., if the distance exceeds twice the step size, then jump)
+    // Define a jump threshold (if the distance exceeds twice the step size, then jump instantly)
     const jumpThreshold = stepSize * 2;
     if (distance > jumpThreshold) {
-      t = 1; // Skip interpolation; jump instantly to the new position
+      t = 1;
     }
     const smoothX = p5.lerp(prev.x, current.x, t);
     const smoothY = p5.lerp(prev.y, current.y, t);
-    p5.fill(255, 0, 0);
-    p5.ellipse(smoothX * cellSize, smoothY * cellSize, cellSize, cellSize);
+
+    // Compute the orientation based on the difference between current and previous positions
+    const orientation = Math.atan2(current.y - prev.y, current.x - prev.x);
+
+    // Instead of drawing a red dot, draw the vector-animated robot with orientation
+    const robotSize = p5.width / 25;
+    const phase = p5.millis() / 80; // Adjust divisor to control animation speed
+
+    drawRobot(p5, smoothX * cellSize, smoothY * cellSize, robotSize, phase, orientation);
     // --- End Rendering ---
   };
 
