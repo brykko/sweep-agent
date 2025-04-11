@@ -125,23 +125,39 @@ const AgentSimulation = () => {
   const [traceFF, setTraceFF] = useState(0.8);
   const [sweepKappa, setSweepKappa] = useState(5);
 
-  // Simulation state.
-  const [trace, setTrace] = useState(Array(MATRIX_SIZE * MATRIX_SIZE).fill(0));
-  const [agentPos, setAgentPos] = useState({ x: SCALE * 0.1, y: SCALE * 0.1 });
-  const [timeStep, setTimeStep] = useState(0);
+  // Unified simulation state stored in a ref to avoid frequent React re-renders
+  const simulationStateRef = useRef({
+    trace: Array(MATRIX_SIZE * MATRIX_SIZE).fill(0),
+    agentPositions: {
+      prev: { x: SCALE * 0.1, y: SCALE * 0.1 },
+      current: { x: SCALE * 0.1, y: SCALE * 0.1 }
+    },
+    timeStep: 0
+  });
 
-  // Ref to hold the "base state" so that simulation updates are idempotent.
-  const baseStateRef = useRef(null);
+  // Ref for accumulating elapsed time for fixed timestep simulation updates
+  const accumulatorRef = useRef(0);
+  
+  // Ref for tracking the last simulation update time
+  const lastSimTimeRef = useRef(performance.now());
 
-  // Set up the simulation update loop.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Initialize base state on first run.
-      if (!baseStateRef.current) {
-        baseStateRef.current = { trace, agentPos };
-      }
-      const baseState = baseStateRef.current;
-      const { newTrace, newAgentPos } = pureSimulationUpdate(
+  // p5.js drawing function.
+  const draw = (p5) => {
+    // --- Update simulation state using fixed timestep ---
+    const now = performance.now();
+    const dt = now - lastSimTimeRef.current;
+    lastSimTimeRef.current = now;
+    accumulatorRef.current += dt;
+
+    // Run simulation updates if enough time has accumulated
+    while (accumulatorRef.current >= intervalTime) {
+      const simState = simulationStateRef.current;
+      // Use the current simulation state as the base
+      const baseState = {
+        trace: simState.trace,
+        agentPos: simState.agentPositions.current
+      };
+      const update = pureSimulationUpdate(
         baseState,
         gvdir,
         sweepKappa,
@@ -150,23 +166,29 @@ const AgentSimulation = () => {
         stepSize,
         traceFF
       );
-      baseStateRef.current = { trace: newTrace, agentPos: newAgentPos };
-      setTrace(newTrace);
-      setAgentPos(newAgentPos);
-      setTimeStep(prev => prev + 1);
-    }, intervalTime);
+      // Update simulation state: shift current to previous and use new agent position
+      simulationStateRef.current = {
+        trace: update.newTrace,
+        agentPositions: {
+          prev: simState.agentPositions.current,
+          current: update.newAgentPos
+        },
+        timeStep: simState.timeStep + 1
+      };
+      accumulatorRef.current -= intervalTime;
+    }
 
-    return () => clearInterval(interval);
-  }, [intervalTime, sweepKappa, stepSize, traceFF]);
+    // --- End Simulation Update ---
 
-  // p5.js drawing function.
-  const draw = (p5) => {
+    // --- Render the simulation state ---
+    // Draw the trace image
     const img = p5.createImage(MATRIX_SIZE, MATRIX_SIZE);
     img.loadPixels();
+    const simTrace = simulationStateRef.current.trace;
     for (let i = 0; i < MATRIX_SIZE; i++) {
       for (let j = 0; j < MATRIX_SIZE; j++) {
         const idx = i * MATRIX_SIZE + j;
-        const value = trace[idx] * 255;
+        const value = simTrace[idx] * 255;
         const pixelIndex = idx * 4;
         img.pixels[pixelIndex] = value;
         img.pixels[pixelIndex + 1] = value;
@@ -178,8 +200,23 @@ const AgentSimulation = () => {
     p5.image(img, 0, 0, p5.width, p5.height);
 
     const cellSize = p5.width / SCALE;
+    // Compute interpolation factor based on the remaining accumulated time
+    let t = Math.min(accumulatorRef.current / intervalTime, 1);
+    const { prev, current } = simulationStateRef.current.agentPositions;
+    // Compute the Euclidean distance between prev and current positions
+    const dx = current.x - prev.x;
+    const dy = current.y - prev.y;
+    const distance = Math.hypot(dx, dy);
+    // Define a jump threshold (e.g., if the distance exceeds twice the step size, then jump)
+    const jumpThreshold = stepSize * 2;
+    if (distance > jumpThreshold) {
+      t = 1; // Skip interpolation; jump instantly to the new position
+    }
+    const smoothX = p5.lerp(prev.x, current.x, t);
+    const smoothY = p5.lerp(prev.y, current.y, t);
     p5.fill(255, 0, 0);
-    p5.ellipse(agentPos.x * cellSize, agentPos.y * cellSize, cellSize, cellSize);
+    p5.ellipse(smoothX * cellSize, smoothY * cellSize, cellSize, cellSize);
+    // --- End Rendering ---
   };
 
   return (
