@@ -14,7 +14,8 @@
     "mathjs": "^14.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-p5": "^1.4.1"
+    "react-p5": "^1.4.1",
+    "react-router-dom": "^7.5.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",

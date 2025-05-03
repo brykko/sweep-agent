@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Sketch from "react-p5";
 import { besseli } from "bessel";
+import { useSearchParams } from "react-router-dom";
 
 // =============================================================================
 // Constants
@@ -153,6 +154,8 @@ const gvdir = generateDirGrid();
 // Main Component: AgentSimulation
 // =============================================================================
 const AgentSimulation = () => {
+  const [searchParams] = useSearchParams();
+  const showSliders = searchParams.get("showSliders") === "1";
   // Simulation settings state.
   const [intervalTime, setIntervalTime] = useState(200);
   const [stepSize, setStepSize] = useState(5);
@@ -263,53 +266,55 @@ const AgentSimulation = () => {
   return (
     <div>
       {/* UI Controls */}
-      <div style={{ marginBottom: "20px" }}>
-        <label>
-          <strong>Update Interval: {intervalTime}ms</strong>
-          <input
-            type="range"
-            min={INTERVAL_RANGE[0]}
-            max={INTERVAL_RANGE[1]}
-            value={intervalTime}
-            onChange={(e) => setIntervalTime(Number(e.target.value))}
-          />
-        </label>
-        <br />
-        <label>
-          <strong>Agent Step Size: {stepSize}px</strong>
-          <input
-            type="range"
-            min={STEP_SIZE_RANGE[0]}
-            max={STEP_SIZE_RANGE[1]}
-            value={stepSize}
-            onChange={(e) => setStepSize(Number(e.target.value))}
-          />
-        </label>
-        <br />
-        <label>
-          <strong>Trace Forgetting Factor: {traceFF}</strong>
-          <input
-            type="range"
-            min={TRACE_FF_RANGE[0]}
-            max={TRACE_FF_RANGE[1]}
-            step={0.01}
-            value={traceFF}
-            onChange={(e) => setTraceFF(Number(e.target.value))}
-          />
-        </label>
-        <br />
-        <label>
-          <strong>Sweep Angular Concentration: {sweepKappa}</strong>
-          <input
-            type="range"
-            min={SWEEP_KAPPA_RANGE[0]}
-            max={SWEEP_KAPPA_RANGE[1]}
-            step={0.1}
-            value={sweepKappa}
-            onChange={(e) => setSweepKappa(Number(e.target.value))}
-          />
-        </label>
-      </div>
+      {showSliders && (
+        <div style={{ marginBottom: "20px" }}>
+          <label>
+            <strong>Update Interval: {intervalTime}ms</strong>
+            <input
+              type="range"
+              min={INTERVAL_RANGE[0]}
+              max={INTERVAL_RANGE[1]}
+              value={intervalTime}
+              onChange={(e) => setIntervalTime(Number(e.target.value))}
+            />
+          </label>
+          <br />
+          <label>
+            <strong>Agent Step Size: {stepSize}px</strong>
+            <input
+              type="range"
+              min={STEP_SIZE_RANGE[0]}
+              max={STEP_SIZE_RANGE[1]}
+              value={stepSize}
+              onChange={(e) => setStepSize(Number(e.target.value))}
+            />
+          </label>
+          <br />
+          <label>
+            <strong>Trace Forgetting Factor: {traceFF}</strong>
+            <input
+              type="range"
+              min={TRACE_FF_RANGE[0]}
+              max={TRACE_FF_RANGE[1]}
+              step={0.01}
+              value={traceFF}
+              onChange={(e) => setTraceFF(Number(e.target.value))}
+            />
+          </label>
+          <br />
+          <label>
+            <strong>Sweep Angular Concentration: {sweepKappa}</strong>
+            <input
+              type="range"
+              min={SWEEP_KAPPA_RANGE[0]}
+              max={SWEEP_KAPPA_RANGE[1]}
+              step={0.1}
+              value={sweepKappa}
+              onChange={(e) => setSweepKappa(Number(e.target.value))}
+            />
+          </label>
+        </div>
+      )}
 
       <Sketch setup={(p5, parent) => p5.createCanvas(800, 800).parent(parent)} draw={draw} />
     </div>
