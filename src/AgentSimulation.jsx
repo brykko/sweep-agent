@@ -87,14 +87,41 @@ const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
 
 // Pure simulation update function.
 // It computes the new agent position and updates the trace (after fading) based on the optimal sweep.
-const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSize, traceFF) => {
+const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSize, traceFF, pathMode) => {
   const { trace, agentPos } = baseState;
   
-  // Compute new agent position.
-  const newAgentPos = {
-    x: (agentPos.x + stepSize) % SCALE,
-    y: (agentPos.y + stepSize) % SCALE,
-  };
+  let newAgentPos;
+  let newDirectionAngle = baseState.directionAngle;
+
+  if (pathMode === "random") {
+    // Perturb the direction angle slightly
+    const anglePerturbation = (Math.random() - 0.5) * 1; // adjust smoothness
+    newDirectionAngle += anglePerturbation;
+
+    // Compute proposed position
+    const dx = stepSize * Math.cos(newDirectionAngle);
+    const dy = stepSize * Math.sin(newDirectionAngle);
+    let newX = agentPos.x + dx;
+    let newY = agentPos.y + dy;
+
+    // Reflect off boundaries
+    if (newX < 0 || newX > SCALE) {
+      newDirectionAngle = Math.PI - newDirectionAngle;
+      newX = agentPos.x - dx;
+    }
+    if (newY < 0 || newY > SCALE) {
+      newDirectionAngle = -newDirectionAngle;
+      newY = agentPos.y - dy;
+    }
+
+    newAgentPos = { x: newX, y: newY };
+  } else {
+    // Default linear mode
+    newAgentPos = {
+      x: (agentPos.x + stepSize) % SCALE,
+      y: (agentPos.y + stepSize) % SCALE,
+    };
+  }
 
   // Fade the existing trace.
   const fadedTrace = trace.map(val => val * traceFF);
@@ -107,7 +134,7 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
 
   // Update the trace with the new sweep weights.
   const newTrace = fadedTrace.map((val, i) => val + weights[i]);
-  return { newTrace, newAgentPos };
+  return { newTrace, newAgentPos, newDirectionAngle };
 };
 
 // New helper function to draw the robot
@@ -116,10 +143,10 @@ const drawRobot = (p5, x, y, size, phase, orientation) => {
   // Translate to (x, y) so that (0,0) becomes the center of the robot
   p5.translate(x, y);
   // Rotate the coordinate system by the specified orientation
-  p5.rotate(-orientation);
+  p5.rotate(orientation + Math.PI/2);
 
   // Set up stroke for the legs
-  p5.stroke(255, 255, 255); // White color for legs
+  p5.stroke(200, 200, 255); // White color for legs
   p5.strokeWeight(10);
 
   // Calculate leg parameters
@@ -136,7 +163,7 @@ const drawRobot = (p5, x, y, size, phase, orientation) => {
   p5.line(legOffset, 0, legOffset, rightOsc);
 
   // Draw the robot's body as a circle centered at (0,0)
-  p5.fill(200);
+  p5.fill(150, 150, 200);
   p5.stroke(0);
   p5.strokeWeight(0);
   p5.ellipse(0, 0, size, size);
@@ -156,8 +183,9 @@ const gvdir = generateDirGrid();
 const AgentSimulation = () => {
   const [searchParams] = useSearchParams();
   const showSliders = searchParams.get("showSliders") === "1";
+  const pathMode = searchParams.get("pathMode") || "linear";
   // Simulation settings state.
-  const [intervalTime, setIntervalTime] = useState(200);
+  const [intervalTime, setIntervalTime] = useState(400);
   const [stepSize, setStepSize] = useState(5);
   const [traceFF, setTraceFF] = useState(0.8);
   const [sweepKappa, setSweepKappa] = useState(5);
@@ -169,6 +197,7 @@ const AgentSimulation = () => {
       prev: { x: SCALE * 0.1, y: SCALE * 0.1 },
       current: { x: SCALE * 0.1, y: SCALE * 0.1 }
     },
+    directionAngle: Math.random() * 2 * Math.PI,
     timeStep: 0
   });
 
@@ -192,7 +221,8 @@ const AgentSimulation = () => {
       // Use the current simulation state as the base
       const baseState = {
         trace: simState.trace,
-        agentPos: simState.agentPositions.current
+        agentPos: simState.agentPositions.current,
+        directionAngle: simState.directionAngle
       };
       const update = pureSimulationUpdate(
         baseState,
@@ -201,7 +231,8 @@ const AgentSimulation = () => {
         xx,
         yy,
         stepSize,
-        traceFF
+        traceFF,
+        pathMode
       );
       // Update simulation state: shift current to previous and use new agent position
       simulationStateRef.current = {
@@ -210,6 +241,7 @@ const AgentSimulation = () => {
           prev: simState.agentPositions.current,
           current: update.newAgentPos
         },
+        directionAngle: update.newDirectionAngle,
         timeStep: simState.timeStep + 1
       };
       accumulatorRef.current -= intervalTime;
