@@ -361,7 +361,7 @@ const AgentSimulation = () => {
   }, [nx, ny]);
 
   return (
-    <div ref={containerRef} style={{ width: '500px', height: '100%' }}>
+    <div ref={containerRef} style={{ width: '500px', height: '100%', backgroundColor: 'transparent' }}>
       {/* UI Controls */}
       {showSliders && (
         <div style={{ marginBottom: "20px" }}>
@@ -423,6 +423,7 @@ const AgentSimulation = () => {
         const canvasWidth = containerWidth;
         const canvasHeight = containerWidth * (ny / nx);
         p5.createCanvas(canvasWidth, canvasHeight).parent(container);
+        p5.clear(); // Ensure canvas is transparent initially
       }} draw={draw} />
     </div>
   );
