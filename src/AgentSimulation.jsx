@@ -9,9 +9,10 @@ import { useSearchParams } from "react-router-dom";
 const DEFAULT_RESOLUTION = 201;
 const DEFAULT_SIZE = 1;
 const DEFAULT_STEP_SIZE = 0.03;
+const DEFAULT_MARGIN = 0.05;
 
 const DIR_GRID_SIZE = 60;
-const WEIGHT_COEFF = 0.001; // normalizing factor
+const DEFAULT_WEIGHT_COEFF = 0.001; // normalizing factor
 const MAX_WEIGHT = 1;
 
 // UI slider ranges
@@ -71,7 +72,7 @@ const calcSpatialOffsets = (agentPos, xx, yy) => {
 
 // Compute sweep weights given spatial offsets and sweep parameters.
 // Returns an array (for each direction) of typed arrays containing the weights.
-const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
+const calcSweepWeights = (offsets, sweepDirection, sweepKappa, weightCoeff) => {
   const { distances, angles } = offsets;
   const len = distances.length;
 
@@ -88,7 +89,8 @@ const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
       let weight = Math.exp(sweepKappa * Math.cos(angles[i] - dir)) /
                    (distances[i] * distances[i] * normalization);
       // Cap the weight at MAX_WEIGHT.
-      weight *= WEIGHT_COEFF;
+      // console.log("weightCoeff:", weightCoeff);
+      weight *= weightCoeff;
       if (weight > MAX_WEIGHT) weight = MAX_WEIGHT;
       weights[i] = weight;
     }
@@ -100,7 +102,7 @@ const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
 // Pure simulation update function.
 // It computes the new agent position and updates the trace (after fading) based on the optimal sweep.
 const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSize, traceFF, pathMode,
-  xsize, ysize ) => {
+  xsize, ysize, margin, weightCoeff) => {
   const { trace, agentPos } = baseState;
   
   let newAgentPos;
@@ -117,12 +119,12 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
     let newX = agentPos.x + dx;
     let newY = agentPos.y + dy;
 
-    // Reflect off boundaries
-    if (newX < 0 || newX > xsize) {
+    // Reflect off margin-adjusted boundaries
+    if (newX < margin || newX > xsize - margin) {
       newDirection = Math.PI - newDirection;
       newX = agentPos.x - dx;
     }
-    if (newY < 0 || newY > ysize) {
+    if (newY < margin || newY > ysize - margin) {
       newDirection = -newDirection;
       newY = agentPos.y - dy;
     }
@@ -131,9 +133,14 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
   } else {
     // Default linear mode
     newAgentPos = {
-      x: (agentPos.x + stepSize) % xsize,
-      y: (agentPos.y + stepSize) % ysize,
+      x: agentPos.x + stepSize,
+      y: agentPos.y + stepSize
     };
+    // Clamp within margin bounds
+    if (newAgentPos.x > xsize - margin) {newAgentPos.x = margin;}
+    if (newAgentPos.y > ysize - margin) {newAgentPos.y = margin;}
+    // newAgentPos.x = Math.max(margin, Math.min(newAgentPos.x, xsize - margin));
+    // newAgentPos.y = Math.max(margin, Math.min(newAgentPos.y, ysize - margin));
   }
 
   // console.log("agent x:", newAgentPos.x);
@@ -144,9 +151,9 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
 
   // Compute spatial offsets, weights for all directions, then choose the optimal direction.
   const offsets = calcSpatialOffsets(newAgentPos, xx, yy);
-  const allWeights = calcSweepWeights(offsets, directions, sweepKappa);
+  const allWeights = calcSweepWeights(offsets, directions, sweepKappa, weightCoeff);
   const optimalDir = selectOptimalDirection(fadedTrace, allWeights, directions);
-  const weights = calcSweepWeights(offsets, optimalDir, sweepKappa)[0];
+  const weights = calcSweepWeights(offsets, optimalDir, sweepKappa, weightCoeff)[0];
 
   // Update the trace with the new sweep weights.
   const newTrace = fadedTrace.map((val, i) => val + weights[i]);
@@ -200,6 +207,8 @@ const AgentSimulation = () => {
   const showSliders = searchParams.get("showSliders") === "1";
   const pathMode = searchParams.get("pathMode") || "linear";
   const initialStepSize = parseFloat(searchParams.get("stepSize")) || DEFAULT_STEP_SIZE;
+  const margin = parseFloat(searchParams.get("margin")) || DEFAULT_MARGIN;
+  const weightCoeff = parseFloat(searchParams.get("weightCoeff")) || DEFAULT_WEIGHT_COEFF;
 
   // Calculate position scaling
   console.log("resolution:", resolution);
@@ -224,8 +233,8 @@ const AgentSimulation = () => {
   const simulationStateRef = useRef({
     trace: Array(nx * ny).fill(0),
     agentPositions: {
-      prev: { x: 0.1, y: 0.1 },
-      current: { x: 0.1, y: 0.1 }
+      prev: { x: margin + 0.01, y: margin + 0.01 },
+      current: { x: margin + 0.01, y: margin + 0.01 }
     },
     direction: Math.random() * 2 * Math.PI,
     timeStep: 0
@@ -264,7 +273,9 @@ const AgentSimulation = () => {
         traceFF,
         pathMode,
         xsize,
-        ysize
+        ysize,
+        margin,
+        weightCoeff
       );
       // Update simulation state: shift current to previous and use new agent position
       simulationStateRef.current = {
