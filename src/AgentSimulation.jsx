@@ -6,14 +6,17 @@ import { useSearchParams } from "react-router-dom";
 // =============================================================================
 // Constants
 // =============================================================================
-const MATRIX_SIZE = 200;
+const DEFAULT_RESOLUTION = 201;
+const DEFAULT_SIZE = 1;
+const DEFAULT_STEP_SIZE = 0.03;
+
 const DIR_GRID_SIZE = 60;
-const SCALE = 100;
+const WEIGHT_COEFF = 0.001; // normalizing factor
 const MAX_WEIGHT = 1;
 
 // UI slider ranges
 const INTERVAL_RANGE = [100, 1000]; // Milliseconds
-const STEP_SIZE_RANGE = [1, 5];     // Pixels
+const STEP_SIZE_RANGE = [0.01, 0.2];     // Pixels
 const TRACE_FF_RANGE = [0.5, 1.0];
 const SWEEP_KAPPA_RANGE = [0.1, 10.0];
 
@@ -22,10 +25,18 @@ const SWEEP_KAPPA_RANGE = [0.1, 10.0];
 // =============================================================================
 
 // Generate the position grid (x and y arrays)
-const generatePosGrid = () => {
-  const positions = Array.from({ length: MATRIX_SIZE }, (_, i) => (i * SCALE) / MATRIX_SIZE);
-  const xx = positions.map(() => [...positions]).flat();
-  const yy = positions.map(val => Array(MATRIX_SIZE).fill(val)).flat();
+const generatePosGrid = (nx, ny, xsize, ysize) => {
+  const xPositions = Array.from({ length: nx }, (_, i) => (i/(nx-1) * xsize) );
+  const yPositions = Array.from({ length: ny }, (_, i) => (i/(ny-1) * ysize) );
+  // console.log("x bins:", xPositions);
+  const xx = [];
+  const yy = [];
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      xx.push(xPositions[i]);
+      yy.push(yPositions[j]);
+    }
+  }
   return { xx, yy };
 };
 
@@ -77,6 +88,7 @@ const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
       let weight = Math.exp(sweepKappa * Math.cos(angles[i] - dir)) /
                    (distances[i] * distances[i] * normalization);
       // Cap the weight at MAX_WEIGHT.
+      weight *= WEIGHT_COEFF;
       if (weight > MAX_WEIGHT) weight = MAX_WEIGHT;
       weights[i] = weight;
     }
@@ -87,30 +99,31 @@ const calcSweepWeights = (offsets, sweepDirection, sweepKappa) => {
 
 // Pure simulation update function.
 // It computes the new agent position and updates the trace (after fading) based on the optimal sweep.
-const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSize, traceFF, pathMode) => {
+const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSize, traceFF, pathMode,
+  xsize, ysize ) => {
   const { trace, agentPos } = baseState;
   
   let newAgentPos;
-  let newDirectionAngle = baseState.directionAngle;
+  let newDirection = baseState.direction;
 
   if (pathMode === "random") {
     // Perturb the direction angle slightly
-    const anglePerturbation = (Math.random() - 0.5) * 1; // adjust smoothness
-    newDirectionAngle += anglePerturbation;
+    const directionPerturbation = (Math.random() - 0.5) * 1; // adjust smoothness
+    newDirection += directionPerturbation;
 
     // Compute proposed position
-    const dx = stepSize * Math.cos(newDirectionAngle);
-    const dy = stepSize * Math.sin(newDirectionAngle);
+    const dx = stepSize * Math.cos(newDirection);
+    const dy = stepSize * Math.sin(newDirection);
     let newX = agentPos.x + dx;
     let newY = agentPos.y + dy;
 
     // Reflect off boundaries
-    if (newX < 0 || newX > SCALE) {
-      newDirectionAngle = Math.PI - newDirectionAngle;
+    if (newX < 0 || newX > xsize) {
+      newDirection = Math.PI - newDirection;
       newX = agentPos.x - dx;
     }
-    if (newY < 0 || newY > SCALE) {
-      newDirectionAngle = -newDirectionAngle;
+    if (newY < 0 || newY > ysize) {
+      newDirection = -newDirection;
       newY = agentPos.y - dy;
     }
 
@@ -118,10 +131,13 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
   } else {
     // Default linear mode
     newAgentPos = {
-      x: (agentPos.x + stepSize) % SCALE,
-      y: (agentPos.y + stepSize) % SCALE,
+      x: (agentPos.x + stepSize) % xsize,
+      y: (agentPos.y + stepSize) % ysize,
     };
   }
+
+  // console.log("agent x:", newAgentPos.x);
+  // console.log("agent y:", newAgentPos.y);
 
   // Fade the existing trace.
   const fadedTrace = trace.map(val => val * traceFF);
@@ -134,7 +150,7 @@ const pureSimulationUpdate = (baseState, directions, sweepKappa, xx, yy, stepSiz
 
   // Update the trace with the new sweep weights.
   const newTrace = fadedTrace.map((val, i) => val + weights[i]);
-  return { newTrace, newAgentPos, newDirectionAngle };
+  return { newTrace, newAgentPos, newDirection: newDirection };
 };
 
 // New helper function to draw the robot
@@ -172,32 +188,46 @@ const drawRobot = (p5, x, y, size, phase, orientation) => {
 };
 
 // =============================================================================
-// Pre-computed constant grids (they never change)
-// =============================================================================
-const { xx, yy } = generatePosGrid();
-const gvdir = generateDirGrid();
-
-// =============================================================================
 // Main Component: AgentSimulation
 // =============================================================================
 const AgentSimulation = () => {
+
+    // Parse the URL params
   const [searchParams] = useSearchParams();
+  const xsize = parseFloat(searchParams.get("xsize")) || DEFAULT_SIZE; // extent of x dimension (in distance units)
+  const ysize = parseFloat(searchParams.get("ysize")) || DEFAULT_SIZE; // extent of y dimension (in distance units)
+  const resolution = parseFloat(searchParams.get("resolution")) || DEFAULT_RESOLUTION; // bins per distance unit
   const showSliders = searchParams.get("showSliders") === "1";
   const pathMode = searchParams.get("pathMode") || "linear";
+  const initialStepSize = parseFloat(searchParams.get("stepSize")) || DEFAULT_STEP_SIZE;
+
+  // Calculate position scaling
+  console.log("resolution:", resolution);
+  const nx = Math.ceil(xsize * resolution); // number of bins in x dimension
+  const ny = Math.ceil(ysize * resolution); // number of bins in y dimension
+  console.log("nx:", nx);
+  console.log("ny:", ny);
+  const { xx, yy } = generatePosGrid(nx, ny, xsize, ysize);
+  const gvdir = generateDirGrid();
+
+  const containerRef = useRef(null);
+  const p5Ref = useRef(null);
+
+
   // Simulation settings state.
   const [intervalTime, setIntervalTime] = useState(400);
-  const [stepSize, setStepSize] = useState(5);
+  const [stepSize, setStepSize] = useState(initialStepSize);
   const [traceFF, setTraceFF] = useState(0.8);
   const [sweepKappa, setSweepKappa] = useState(5);
 
   // Unified simulation state stored in a ref to avoid frequent React re-renders
   const simulationStateRef = useRef({
-    trace: Array(MATRIX_SIZE * MATRIX_SIZE).fill(0),
+    trace: Array(nx * ny).fill(0),
     agentPositions: {
-      prev: { x: SCALE * 0.1, y: SCALE * 0.1 },
-      current: { x: SCALE * 0.1, y: SCALE * 0.1 }
+      prev: { x: 0.1, y: 0.1 },
+      current: { x: 0.1, y: 0.1 }
     },
-    directionAngle: Math.random() * 2 * Math.PI,
+    direction: Math.random() * 2 * Math.PI,
     timeStep: 0
   });
 
@@ -222,7 +252,7 @@ const AgentSimulation = () => {
       const baseState = {
         trace: simState.trace,
         agentPos: simState.agentPositions.current,
-        directionAngle: simState.directionAngle
+        direction: simState.direction
       };
       const update = pureSimulationUpdate(
         baseState,
@@ -232,7 +262,9 @@ const AgentSimulation = () => {
         yy,
         stepSize,
         traceFF,
-        pathMode
+        pathMode,
+        xsize,
+        ysize
       );
       // Update simulation state: shift current to previous and use new agent position
       simulationStateRef.current = {
@@ -241,7 +273,7 @@ const AgentSimulation = () => {
           prev: simState.agentPositions.current,
           current: update.newAgentPos
         },
-        directionAngle: update.newDirectionAngle,
+        direction: update.newDirection,
         timeStep: simState.timeStep + 1
       };
       accumulatorRef.current -= intervalTime;
@@ -251,24 +283,23 @@ const AgentSimulation = () => {
 
     // --- Render the simulation state ---
     // Draw the trace image
-    const img = p5.createImage(MATRIX_SIZE, MATRIX_SIZE);
+    const img = p5.createImage(nx, ny);
     img.loadPixels();
     const simTrace = simulationStateRef.current.trace;
-    for (let i = 0; i < MATRIX_SIZE; i++) {
-      for (let j = 0; j < MATRIX_SIZE; j++) {
-        const idx = i * MATRIX_SIZE + j;
+    for (let row = 0; row < ny; row++) {
+      for (let col = 0; col < nx; col++) {
+        const idx = row * nx + col;
         const value = simTrace[idx] * 255;
         const pixelIndex = idx * 4;
         img.pixels[pixelIndex] = value;
         img.pixels[pixelIndex + 1] = value;
         img.pixels[pixelIndex + 2] = value;
-        img.pixels[pixelIndex + 3] = 255;
+        img.pixels[pixelIndex + 3] = 255; // alpha
       }
     }
     img.updatePixels();
     p5.image(img, 0, 0, p5.width, p5.height);
 
-    const cellSize = p5.width / SCALE;
     // Compute interpolation factor based on the remaining accumulated time
     let t = Math.min(accumulatorRef.current / intervalTime, 1);
     const { prev, current } = simulationStateRef.current.agentPositions;
@@ -288,15 +319,38 @@ const AgentSimulation = () => {
     const orientation = Math.atan2(current.y - prev.y, current.x - prev.x);
 
     // Instead of drawing a red dot, draw the vector-animated robot with orientation
+    // console.log("P5.width", p5.width);
     const robotSize = p5.width / 25;
     const phase = p5.millis() / 80; // Adjust divisor to control animation speed
 
-    drawRobot(p5, smoothX * cellSize, smoothY * cellSize, robotSize, phase, orientation);
+    // We'll be drawing the robot in *pixel coordinates*, so we need to convert our position units
+    // into pixels.
+    const resolutionPx = p5.width / xsize;
+    // console.log("smoothX:", smoothX);
+
+    drawRobot(p5, smoothX * resolutionPx, smoothY * resolutionPx, robotSize, phase, orientation);
     // --- End Rendering ---
   };
 
+  useEffect(() => {
+    const handleResize = () => {
+      if (!p5Ref.current) return;
+      // Always fill width, compute height from width × (ny/nx)
+      const container = containerRef.current || p5Ref.current.canvas.parentNode;
+      const containerWidth = container.clientWidth;
+      const canvasWidth = containerWidth;
+      const canvasHeight = containerWidth * (ny / nx);
+      console.log("RESIZE to ", canvasHeight, " x ", canvasHeight);
+      p5Ref.current.resizeCanvas(canvasWidth, canvasHeight);
+    };
+    window.addEventListener('resize', handleResize);
+    // Initial sizing
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, [nx, ny]);
+
   return (
-    <div>
+    <div ref={containerRef} style={{ width: '500px', height: '100%' }}>
       {/* UI Controls */}
       {showSliders && (
         <div style={{ marginBottom: "20px" }}>
@@ -312,11 +366,12 @@ const AgentSimulation = () => {
           </label>
           <br />
           <label>
-            <strong>Agent Step Size: {stepSize}px</strong>
+            <strong>Agent Step Size: {stepSize}</strong>
             <input
               type="range"
               min={STEP_SIZE_RANGE[0]}
               max={STEP_SIZE_RANGE[1]}
+              step={0.001}
               value={stepSize}
               onChange={(e) => setStepSize(Number(e.target.value))}
             />
@@ -348,7 +403,16 @@ const AgentSimulation = () => {
         </div>
       )}
 
-      <Sketch setup={(p5, parent) => p5.createCanvas(800, 800).parent(parent)} draw={draw} />
+      <Sketch setup={(p5, parent) => {
+        p5Ref.current = p5;
+        // Always fill width, compute height from width × (ny/nx)
+        const container = containerRef.current || parent;
+        const containerWidth = container.clientWidth;
+        console.log("Container width:", containerWidth);
+        const canvasWidth = containerWidth;
+        const canvasHeight = containerWidth * (ny / nx);
+        p5.createCanvas(canvasWidth, canvasHeight).parent(container);
+      }} draw={draw} />
     </div>
   );
 };
