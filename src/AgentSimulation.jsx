@@ -169,11 +169,11 @@ const drawRobot = (p5, x, y, size, phase, orientation) => {
   p5.rotate(orientation + Math.PI/2);
 
   // Set up stroke for the legs
-  p5.stroke(200, 200, 255); // White color for legs
-  p5.strokeWeight(10);
+  p5.stroke(150, 150, 255); // White color for legs
+  p5.strokeWeight(size/2);
 
   // Calculate leg parameters
-  const strideLength = 20;
+  const strideLength = size;
   const legOffset = size * 0.3;
 
   // Draw left leg: oscillate vertically using sine function
@@ -186,7 +186,7 @@ const drawRobot = (p5, x, y, size, phase, orientation) => {
   p5.line(legOffset, 0, legOffset, rightOsc);
 
   // Draw the robot's body as a circle centered at (0,0)
-  p5.fill(150, 150, 200);
+  p5.fill(100, 100, 200);
   p5.stroke(0);
   p5.strokeWeight(0);
   p5.ellipse(0, 0, size, size);
@@ -331,7 +331,7 @@ const AgentSimulation = () => {
 
     // Instead of drawing a red dot, draw the vector-animated robot with orientation
     // console.log("P5.width", p5.width);
-    const robotSize = p5.width / 25;
+    const robotSize = p5.width / 20;
     const phase = p5.millis() / 80; // Adjust divisor to control animation speed
 
     // We'll be drawing the robot in *pixel coordinates*, so we need to convert our position units
@@ -361,7 +361,7 @@ const AgentSimulation = () => {
   }, [nx, ny]);
 
   return (
-    <div ref={containerRef} style={{ width: '500px', height: '100%', backgroundColor: 'transparent' }}>
+    <div ref={containerRef} style={{ width: 300+'px', height: '100%', backgroundColor: 'transparent' }}>
       {/* UI Controls */}
       {showSliders && (
         <div style={{ marginBottom: "20px" }}>
